@@ -1,0 +1,17 @@
+# No-Nerf gate — run manifest (copy to manifest.yaml; fill before each bench)
+bench_id: ""                # unique id for this run
+date: "2026-08-12"
+bench_topology: "2x DGX-Spark (GB10), NVLink/IB mesh"
+model_repo: "deepseek-v4-flash-0731-dspark"
+model_commit: ""            # pin model weights
+baseline_runtime_commit: "" # stable-line image + commit
+candidate_runtime_commit: ""# rolling-line image + commit
+image_sha256: []
+env:                        # copy from the serving config verbatim
+  KV_CACHE_DTYPE: "nvfp4_ds_mla"
+  PREFIX_CACHING: "true"
+  SPECULATIVE_DECODING: "dspark"
+seeds: 0
+runs_per_metric: 3
+metrics: [decode_tok_s, ttft_cold_s, kv_fidelity_ppl, reason_preserve, dspark_acceptance, concurrency_ge6]
+notes: ""

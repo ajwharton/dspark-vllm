@@ -1,0 +1,52 @@
+# No-nerf gate — CI (self-hosted N-node bench)
+#
+# Runs the gate harness on a self-hosted N x DGX-Spark (GB10) runner. The bench
+# is an interleaved A/B between a stable endpoint and a rolling/candidate
+# endpoint on the SAME bench pair; FAIL (regression) fails the job.
+# Requires org/repo variables: GATE_STABLE_URL, GATE_ROLLING_URL, GATE_MODEL.
+name: no-nerf-gate
+
+on:
+  pull_request:
+    branches: [main, stable]
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: [self-hosted, dgx-spark-2node]   # N x GB10 reference bench
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gate tooling self-test
+        working-directory: spark-community
+        run: python3 -m unittest harness.test_core -v
+
+      - name: Generate cold prompts
+        working-directory: spark-community
+        run: python3 -m harness.cli gen --prompts 8 --approx-tokens 4096 \
+              --out /tmp/nng-cold.json
+
+      - name: Decode throughput gate
+        working-directory: spark-community
+        run: |
+          python3 -m harness.cli bench \
+            --base-url "${{ vars.GATE_STABLE_URL }}" \
+            --cand-url  "${{ vars.GATE_ROLLING_URL }}" \
+            --model "${{ vars.GATE_MODEL }}" \
+            --metric decode --prompts 3 --threshold 10 || exit 1
+
+      - name: Cold TTFT gate
+        working-directory: spark-community
+        run: |
+          python3 -m harness.cli bench \
+            --base-url "${{ vars.GATE_STABLE_URL }}" \
+            --cand-url  "${{ vars.GATE_ROLLING_URL }}" \
+            --model "${{ vars.GATE_MODEL }}" \
+            --metric ttft --prompts 3 --threshold 10 || exit 1
+
+      - name: Reasoning preservation (trap 04/20)
+        working-directory: spark-community
+        run: |
+          python3 -m harness.cli reasoning \
+            --url "${{ vars.GATE_ROLLING_URL }}" \
+            --model "${{ vars.GATE_MODEL }}" --turns 3 || exit 1
