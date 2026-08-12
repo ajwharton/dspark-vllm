@@ -131,11 +131,24 @@ Commit `49a9d7dfd`. Ported from `stable` overlay:
     be fully proven on temper alone. Left as the real (dual-node) validation step.
   - temper Moet lane was stopped during the probe and restored afterwards.
 
-### PENDING — MAIN-CHUNK-B: GB10 MXFP4 MoE path (`flashinfer_b12x`)
-Stock `main` accepts the flag name but the MXFP4 oracle rejects it; triton/cutlass
-both fail on GB10. Port the stable `flashinfer_b12x_moe.py` wiring into `main`'s
-`select_deepseek_v4_mxfp4_moe_backend` oracle as a rule-9 default-off backend, plus
-the DeepGEMM UE8M0 SF-layout workaround (#51758/#50796 class) needed regardless.
-This is the larger chunk; without it `main` cannot serve DS4F on GB10 even with
-MAIN-CHUNK-A.
+### LANDED — MAIN-CHUNK-B: GB10 MXFP4 MoE path (`flashinfer_b12x`)
+Stock `main` accepted the flag name but the MXFP4 oracle rejected it; triton
+does not support GB10; cutlass died in DeepGEMM UE8M0. Ported from `stable`:
+- new file `vllm/model_executor/layers/fused_moe/experts/b12x_mxfp4_moe.py`
+  (`B12xExperts`, native MXFP4 / `fp4_e8m0_k32` on SM120).
+- oracle wiring in `mxfp4.py`: enum `B12X_MXFP4`, `map_mxfp4_backend["flashinfer_b12x"]`,
+  `backend_to_kernel_cls` → `B12xExperts`, weight-convert passthrough, W4A16
+  quant-config membership, `make_mxfp4_moe_kernel(..., layer=)` post-load.
+- **Rule-9 default-off:** B12X is NOT in `_get_priority_backends` /
+  `_get_priority_backends_for_gpt_oss`. Only `--moe-backend flashinfer_b12x`.
+- Pinned by `test_b12x_port.py`. DeepGEMM UE8M0 workaround was NOT ported —
+  DS4F on GB10 uses b12x and never hits that path.
+- **Status:** source-complete + contract-tested. GPU validation = dual-node
+  `main` boot (needs an image build). Do not displace the live Stage-1 serve
+  until that image exists and Andrew says go.
+
+### PENDING — MAIN-CHUNK-B GPU validation
+Dual-node boot of rolling `main` + CHUNK-A + CHUNK-B against the 0731 weights.
+Requires a `main` image (not the Anemll bake). Live pair stays on
+`vllm-dspark-fork:stable-5030cb2` until then.
 
