@@ -1,7 +1,29 @@
 # No-Nerf gate — core logic tests (stdlib unittest, no hardware required).
 import unittest
 
-from .core import compare_median, gate_blocked, unique_prompts
+from .core import (VLLMClient, compare_median, gate_blocked, median,
+                   unique_prompts)
+
+
+class TestVLLMClientAuth(unittest.TestCase):
+    def test_no_key_no_auth_header(self):
+        c = VLLMClient("http://x", "m")
+        self.assertEqual(c._request_headers(),
+                         {"Content-Type": "application/json"})
+
+    def test_api_key_auth_header(self):
+        c = VLLMClient("http://x", "m", api_key="secret")
+        self.assertEqual(c._request_headers()["Authorization"], "Bearer secret")
+
+    def test_extra_body_merged(self):
+        c = VLLMClient("http://x", "m",
+                       chat_template_kwargs={"enable_thinking": True})
+        p = c._apply_extra_body({"model": "m"})
+        self.assertEqual(p["chat_template_kwargs"], {"enable_thinking": True})
+
+    def test_no_extra_body_when_unset(self):
+        c = VLLMClient("http://x", "m")
+        self.assertEqual(c._apply_extra_body({"model": "m"}), {"model": "m"})
 
 
 class TestUniquePrompts(unittest.TestCase):

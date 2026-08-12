@@ -35,8 +35,8 @@ def _run_batch(client, prompts, metric):  # -> list[float] values
 def cmd_bench(args: argparse.Namespace) -> int:
     """Interleaved A/B: baseline vs candidate, set of unique prompts each."""
     gen = unique_prompts(args.prompts, args.approx_tokens, seed=args.seed)
-    base = VLLMClient(args.base_url, args.model)
-    cand = VLLMClient(args.cand_url, args.model)
+    base = VLLMClient(args.base_url, args.model, api_key=args.api_key)
+    cand = VLLMClient(args.cand_url, args.model, api_key=args.api_key)
     # Interleave by running alternately across the shared prompt set, seeded.
     rng = random.Random(args.seed)
     order = list(range(len(gen)))
@@ -65,7 +65,9 @@ def cmd_bench(args: argparse.Namespace) -> int:
 
 
 def cmd_reasoning(args: argparse.Namespace) -> int:
-    client = VLLMClient(args.url, args.model)
+    chat_kwargs = {"enable_thinking": True} if args.think else None
+    client = VLLMClient(args.url, args.model, api_key=args.api_key,
+                        chat_template_kwargs=chat_kwargs)
     samples = client.reasoning_probe(turns=args.turns)
     present = sum(1 for s in samples if s.reasoning_present)
     print(f"reasoning present in {present}/{len(samples)} turns")
@@ -87,6 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--base-url", required=True)
     b.add_argument("--cand-url", required=True)
     b.add_argument("--model", required=True)
+    b.add_argument("--api-key", default="")
     b.add_argument("--metric", choices=["ttft", "decode"], required=True)
     b.add_argument("--prompts", type=int, default=3)
     b.add_argument("--approx-tokens", type=int, default=4096)
@@ -98,7 +101,10 @@ def main(argv: list[str] | None = None) -> int:
     r = sub.add_parser("reasoning")
     r.add_argument("--url", required=True)
     r.add_argument("--model", required=True)
+    r.add_argument("--api-key", default="")
     r.add_argument("--turns", type=int, default=3)
+    r.add_argument("--think", action="store_true",
+                   help="request enable_thinking (required for DS4F reasoning field)")
     r.set_defaults(fn=cmd_reasoning)
 
     args = p.parse_args(argv)

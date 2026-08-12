@@ -70,18 +70,31 @@ class VLLMClient:
     stream for cold TTFT (time-to-first-token). stdlib urllib only."""
 
     def __init__(self, base_url: str, model: str, timeout: int = 600,
-                 max_tokens: int = 64):
+                 max_tokens: int = 64, api_key: str = "",
+                 chat_template_kwargs: Optional[dict] = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.max_tokens = max_tokens
+        self.api_key = api_key
+        self.chat_template_kwargs = chat_template_kwargs
+
+    def _request_headers(self) -> dict:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def _apply_extra_body(self, payload: dict) -> dict:
+        if self.chat_template_kwargs:
+            payload["chat_template_kwargs"] = self.chat_template_kwargs
+        return payload
 
     def _post(self, payload: dict, stream: bool) -> dict:
         url = f"{self.base_url}/v1/chat/completions"
-        body = json.dumps(payload).encode()
+        body = json.dumps(self._apply_extra_body(payload)).encode()
         req = urllib.request.Request(
-            url, data=body, method="POST",
-            headers={"Content-Type": "application/json"},
+            url, data=body, method="POST", headers=self._request_headers(),
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as resp:
             if not stream:
