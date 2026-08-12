@@ -67,7 +67,7 @@ def get_kv_quant_mode(kv_cache_dtype: str) -> KVQuantMode:
         return KVQuantMode.INT8_PER_TOKEN_HEAD
     if kv_cache_dtype == "fp8_per_token_head":
         return KVQuantMode.FP8_PER_TOKEN_HEAD
-    if kv_cache_dtype == "nvfp4":
+    if kv_cache_dtype in ("nvfp4", "nvfp4_ds_mla"):
         return KVQuantMode.NVFP4
     if isinstance(kv_cache_dtype, str) and kv_cache_dtype.startswith("fp8"):
         return KVQuantMode.FP8_PER_TENSOR
@@ -378,10 +378,11 @@ class MLAAttentionSpec(FullAttentionSpec):
 
     @property
     def real_page_size_bytes(self) -> int:
-        if self.cache_dtype_str == "fp8_ds_mla":
+        if self.cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):
             if self.model_version == "deepseek_v4":
-                # DeepseekV4: 448B NoPE + 128B RoPE + 8B fp8 scale = 584B per token.
-                # head_size stays semantic (512); bytes are determined here.
+                # DeepseekV4 uses the padded 584-byte sparse-MLA envelope for
+                # both fp8_ds_mla and nvfp4_ds_mla. head_size stays semantic
+                # (512); bytes are determined by the backend layout here.
                 return self.storage_block_size * 584
             # V3.2 main MLA: 656-byte custom layout (kv_lora_rank=512 +
             # qk_rope_head_dim=64, head_size=576). See flashmla_sparse.py.
@@ -605,7 +606,10 @@ class SlidingWindowMLASpec(SlidingWindowSpec):
 
     @property
     def real_page_size_bytes(self) -> int:
-        if self.model_version == "deepseek_v4" and self.cache_dtype_str == "fp8_ds_mla":
+        if self.model_version == "deepseek_v4" and self.cache_dtype_str in (
+            "fp8_ds_mla",
+            "nvfp4_ds_mla",
+        ):
             # DeepseekV4 FlashMLA: 448B NoPE + 128B RoPE + 8B fp8 scale = 584B
             # per token. FlashInfer's contiguous bf16/fp8 cache falls through to
             # the element-size formula below.

@@ -80,9 +80,13 @@ class DeepseekV4SWACache(torch.nn.Module, AttentionLayerBase):
         assert self.dtype in (torch.uint8, torch.bfloat16, torch.float8_e4m3fn)
 
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
-        # fp8_ds_mla's UE8M0 paged layout needs 576B alignment; contiguous
-        # bf16/fp8 cache uses the natural element-size page.
+        # DeepSeek's packed paged layouts expose a 584-byte sparse-attention
+        # token envelope. Keep the upstream 576B FP8 alignment, while the
+        # DSpark NVFP4 layout is naturally aligned to its 584B token size.
         uses_fp8_ds_mla_layout = self.cache_config.cache_dtype == "fp8_ds_mla"
+        uses_nvfp4_ds_mla_layout = (
+            self.cache_config.cache_dtype == "nvfp4_ds_mla"
+        )
         return SlidingWindowMLASpec(
             block_size=self.block_size,
             num_kv_heads=1,
@@ -91,7 +95,13 @@ class DeepseekV4SWACache(torch.nn.Module, AttentionLayerBase):
             sliding_window=self.window_size,
             cache_dtype_str=self.cache_config.cache_dtype,
             # 576B for FlashMLA packing; 512B for FlashInfer sparse (#44577).
-            alignment=576 if uses_fp8_ds_mla_layout else 512,
+            alignment=(
+                584
+                if uses_nvfp4_ds_mla_layout
+                else 576
+                if uses_fp8_ds_mla_layout
+                else 512
+            ),
             model_version="deepseek_v4",
             kv_quant_mode=get_kv_quant_mode(self.cache_config.cache_dtype),
         )
@@ -138,7 +148,7 @@ class DeepseekSparseSWABackend(AttentionBackend):
         cache_dtype_str: str = "auto",
     ) -> tuple[int, ...]:
         assert num_kv_heads == 1
-        if cache_dtype_str == "fp8_ds_mla":
+        if cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):
             # DeepseekV4 SWA: 584B per token (448 NoPE + 128 RoPE + 8 fp8 scale).
             # head_size passed in is the semantic head_dim (512).
             return (num_blocks, block_size, 584)
