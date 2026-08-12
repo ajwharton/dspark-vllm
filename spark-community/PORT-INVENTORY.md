@@ -5,6 +5,32 @@ Basis: community recipes' attribution lists + upstream vLLM tracking
 (verified 2026-08-12). This is the single source of truth for what is rolled
 up and what is missing. **Read this before proposing a port.**
 
+## Source & capability map (audit v1 — confirmed repos, 2026-08-12)
+
+Where the capability actually lives. The critical fact: **the same capability
+is re-integrated across many independent repos**, so a roll-up must proceed by
+*capability* (pick ONE canonical implementation), never by *source* (which
+would port the same thing 3–5 times and conflict).
+
+| Source repo | Role | Capabilities it carries |
+|-------------|------|--------------------------|
+| `rafaelcaricio/vllm` (PR #1) | origin of DSpark-in-vLLM | DSpark integration (spec decode) |
+| `fraserprice/dspark-vllm` + HF model | DSpark model + runtime (Blackwell/CUDA-13.2) | DSpark model, sparse-MLA |
+| `local-inference-lab/rtx6kpro`, `voipmonitor/vllm` (B12X) | sm120/B12X kernel stack | B12X MoE, sparse-MLA sm120 (serves Fraser's model) |
+| `drowzeys/Keys-Concurrency-…` + `Keys---Full-GLM-5.2-Quantrio-…` | concurrency patch + `nvfp4_ds_mla` origin | DSpark 2-node concurrency, NVFP4 KV lineage |
+| `tonyd2wild/DeepSeek-v4-Flash-0731-…-2x-DGX-Spark` (39 forks) | NVFP4 1M recipe + correctness | NVFP4 integration, garble fix, draft-loader fix |
+| `Anemll/dspark-vllm-gx10` | **our prod base** (img a8394849) | pinned DSpark runtime; divergent DSpark behavior |
+| `MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark` | 2-node launch packaging | worker-first launch, her six v0.27 backports |
+| "jasl fork" (4x, RDMA, MTP) | NVLink/RDMA multi-node | MTP path, RDMA tuning |
+| upstream `vllm-project/vllm` | canonical line | its OWN DS4/DSpark path (target to converge on) |
+
+**Observed duplication across sources:** DSpark integration appears in 5
+places (rafaelcaricio, fraserprice, B12X, Anemll, upstream); NVFP4 KV in 3
+(drowzeys, tonyd2wild, Anemll); concurrency in 3 (drowzeys, tonyd2wild, Anemll).
+=> Roll up by capability, not by author. Sequence risk-first and gate each.
+
+## Capability table
+
 Legend — Upstream status: `merged` = cleanly in upstream vLLM;
 `partial` = partly absorbed / fragmented; `fork` = only in a fork (we must
 carry it); `unmerged` = PR open upstream, not merged/released.
