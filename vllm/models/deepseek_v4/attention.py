@@ -101,12 +101,14 @@ def _resolve_dsv4_kv_cache_dtype(
     token's KV row in its element dtype: bf16 or per-tensor FP8 E4M3.
     """
     if use_fp8_ds_mla_layout:
-        # fp8_ds_mla block format: UE8M0 block-scaled fp8 packed as uint8.
-        assert kv_cache_dtype.startswith("fp8"), (
-            f"DeepseekV4 fp8_ds_mla layout only supports fp8 kv-cache, "
+        # fp8_ds_mla / nvfp4_ds_mla: UE8M0 block-scaled packed as uint8.
+        # nvfp4_ds_mla is the Issue-#22 long-context dtype; do not rewrite it
+        # back to fp8_ds_mla (that would drop the fast-path name).
+        assert kv_cache_dtype.startswith("fp8") or kv_cache_dtype == "nvfp4_ds_mla", (
+            f"DeepseekV4 fp8_ds_mla layout only supports fp8/nvfp4 kv-cache, "
             f"got {kv_cache_dtype}"
         )
-        if kv_cache_dtype != "fp8_ds_mla":
+        if kv_cache_dtype not in ("fp8_ds_mla", "nvfp4_ds_mla"):
             if cache_config is not None:
                 cache_config.cache_dtype = "fp8_ds_mla"
             kv_cache_dtype = "fp8_ds_mla"

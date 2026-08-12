@@ -27,6 +27,7 @@ def _read(rel):
 CACHE_PY = "vllm/config/cache.py"
 TORCH_UTILS_PY = "vllm/utils/torch_utils.py"
 FLASHMLA_PY = "vllm/v1/attention/backends/mla/flashmla_sparse.py"
+ATTN_PY = "vllm/models/deepseek_v4/attention.py"
 
 
 class Nvfp4DsMlaPortTest(unittest.TestCase):
@@ -35,6 +36,7 @@ class Nvfp4DsMlaPortTest(unittest.TestCase):
         cls.cache = _read(CACHE_PY)
         cls.torch_utils = _read(TORCH_UTILS_PY)
         cls.flashmla = _read(FLASHMLA_PY)
+        cls.attn = _read(ATTN_PY)
 
     def test_dtype_is_in_cache_enum(self):
         self.assertIn('"nvfp4_ds_mla"', self.cache)
@@ -77,6 +79,16 @@ class Nvfp4DsMlaPortTest(unittest.TestCase):
         self.assertIn(
             'if cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):',
             self.flashmla,
+        )
+
+    def test_dsv4_attention_resolver_accepts_nvfp4(self):
+        # Live dual-node crash: assert kv_cache_dtype.startswith("fp8")
+        # rejected nvfp4_ds_mla before backend selection finished.
+        self.assertIn('kv_cache_dtype == "nvfp4_ds_mla"', self.attn)
+        self.assertIn('("fp8_ds_mla", "nvfp4_ds_mla")', self.attn)
+        self.assertNotIn(
+            'assert kv_cache_dtype.startswith("fp8"),',
+            self.attn,
         )
 
 

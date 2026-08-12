@@ -147,8 +147,23 @@ does not support GB10; cutlass died in DeepGEMM UE8M0. Ported from `stable`:
   `main` boot (needs an image build). Do not displace the live Stage-1 serve
   until that image exists and Andrew says go.
 
-### PENDING — MAIN-CHUNK-B GPU validation
-Dual-node boot of rolling `main` + CHUNK-A + CHUNK-B against the 0731 weights.
-Requires a `main` image (not the Anemll bake). Live pair stays on
-`vllm-dspark-fork:stable-5030cb2` until then.
+### ATTEMPTED — MAIN-CHUNK-B GPU validation (2026-08-12) — FAILED, rolled back
+Baked stock `v0.27.1-aarch64-cu129-ubuntu2404` + CHUNK-A/B semantic ports +
+Anemll `b12x==0.15.3` package + B12X env vars. Dual-node smoke on forge+hammer.
+
+Progress vs stock falsify:
+- `nvfp4_ds_mla` argparse ACCEPT
+- MXFP4 oracle selected `B12X_MXFP4` (the stock REJECT is gone)
+- First crash: DSV4 `attention.py` asserted dtype.startswith("fp8") — patched
+  (CHUNK-A completeness; now in tree + test)
+- Then weights loaded ~48/48 and died in **FP8 linear** post-load:
+  `deepgemm_post_process_fp8_weight_block` → `Unknown SF transformation`
+  (UE8M0). Same class as stock cutlass death. MoE path was B12X; the dense
+  FP8 linears still go through stock DeepGEMM.
+
+Rollback: `vllm-dspark-fork:stable-5030cb2` restored, chat OK.
+Anemll fallback `vllm_ds4_0731_anemll` still present.
+
+Next chunk: DeepGEMM UE8M0 SF-layout for **linear** FP8 (not MoE). That is
+what still blocks a stock-0.27-family serve of these weights.
 
