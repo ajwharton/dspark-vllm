@@ -23,6 +23,15 @@ measured, cold-cache, on N-node GB10.
 A runtime change without a gate result is reviewed for risk; a maintainer may
 request the bench before merge.
 
+## Code-creation governance
+Every change — agent-authored or human-authored — must also pass the gates in
+`AGENTIC-CODE-GOVERNANCE.md`. Short version: minimal diff, smallest reasonable
+fix, no drive-by refactors, tests mandatory (in the canonical suite), and
+provenance + reversibility (DCO-signed). Run that file's review checklist
+before opening a PR. A diff that fails a gate is returned for revision; it is
+not merged to buy time. This bar applies equally to contributors picking up
+the roll-up and to automated tooling.
+
 ## DCO
 Commits must be signed (`git commit -s`) under the Developer Certificate of
 Origin. Keeps provenance clean for a community-maintained layer.
