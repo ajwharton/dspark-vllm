@@ -91,6 +91,7 @@ class FlashMLASparseBackend(AttentionBackend):
         "auto",
         "bfloat16",
         "fp8_ds_mla",
+        "nvfp4_ds_mla",
         "fp8",  # alias for fp8_ds_mla
     ]
 
@@ -135,7 +136,7 @@ class FlashMLASparseBackend(AttentionBackend):
         head_size: int,
         cache_dtype_str: str = "auto",
     ) -> tuple[int, ...]:
-        if cache_dtype_str == "fp8_ds_mla":
+        if cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):
             # V3.2 main MLA: 656-byte custom storage format. See module docstring.
             return (num_blocks, block_size, 656)
         else:
@@ -267,7 +268,8 @@ class FlashMLASparseMetadataBuilder(
             FlashMLASparseImpl._compute_fp8_decode_padded_heads(self.num_heads)
         )
 
-        self.use_fp8_kv_cache = cache_config.cache_dtype == "fp8_ds_mla"
+        self.use_fp8_kv_cache = cache_config.cache_dtype in (
+            "fp8_ds_mla", "nvfp4_ds_mla")
         max_num_seqs = vllm_config.scheduler_config.max_num_seqs
         # Shape: [max_num_seqs], all elements = topk_tokens (constant for full-CG)
         self.topk_tokens_tensor = torch.full(
@@ -561,12 +563,12 @@ class FlashMLASparseImpl(SparseMLACommonImpl[FlashMLASparseMetadata]):
         max_tokens = vllm_config.scheduler_config.max_num_batched_tokens
         q_concat_shape = (max_tokens, num_heads, head_size)
         if is_quantized_kv_cache(kv_cache_dtype):
-            assert kv_cache_dtype == "fp8_ds_mla", (
+            assert kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"), (
                 "FlashMLA Sparse Attention backend fp8 only supports "
                 "fp8_ds_mla kv-cache dtype"
             )
 
-        if kv_cache_dtype == "fp8_ds_mla":
+        if kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"):
             # Reserve workspace during initialization
             assert vllm_config is not None and vllm_config.model_config is not None
             prefill_workspace_size = get_prefill_workspace_size(
@@ -857,7 +859,7 @@ class FlashMLASparseImpl(SparseMLACommonImpl[FlashMLASparseMetadata]):
         assert self.topk_indices_buffer is not None
         topk_indices = self.topk_indices_buffer[:num_actual_toks]
 
-        use_fp8_cache = self.kv_cache_dtype == "fp8_ds_mla"
+        use_fp8_cache = self.kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla")
 
         if not use_fp8_cache:
             attn_out = self._forward_bf16_kv(
