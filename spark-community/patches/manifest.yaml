@@ -1,7 +1,7 @@
 # Package manifest — PIPs for the DS4F/DSpark roll-up
 # Lifecycle: spec | extracted | applied | gated | merged
-# Every merged PIP must have a gate result recorded in this file (or a
-# maintainer risk verdict). See NO-NERF-GATE.md for metric definitions.
+# Every merged PIP must have a gate result recorded here (or a maintainer risk
+# verdict). See NO-NERF-GATE.md for metric definitions.
 schema_version: 1
 target: dgx-spark-gb10
 no_nerf_gate: ../NO-NERF-GATE.md
@@ -9,26 +9,26 @@ pips:
   - id: PIP-200
     milestone: M2
     capability: DSpark draft-loader silent 12-tensor drop fix (accept 60%->25%)
-    source: community correctness patch (tonyd2wild family; confirmed in audit)
-    base: stable, main
+    source: "tonyd2wild/DeepSeek-v4-Flash-0731-DSpark-1M-NVFP4-KV-2x-DGX-Spark patches/0004-dspark-shared-expert-gate-up-proj.patch"
+    base: "captured against Anemll dspark-vllm-gx10 0.1.1 (vLLM v0.25.1); reroll for stable/main"
     acceptance: "dspark_acceptance restored to 60%-class; decode not regressed"
-    status: spec
-    gate_result: null
+    status: extracted
+    gate_result: null   # port + gate pending
   - id: PIP-201
     milestone: M2
     capability: Cold-start reasoning garble / thinking-routing fix (trap 04/20)
-    source: measured on temper (DS4F-0731 live); Moet CHANGES-VS-UPSTREAM
-    base: stable, main
+    source: "lrozewicz/vLLM-Moet-GB10 patch/vllm-moet-v0.24.0.patch (files: vllm/parser/abstract_parser.py, vllm/reasoning/deepseek_v3_reasoning_parser.py)"
+    base: "captured against vllm-openai:v0.24.0 (ee0da84); reroll for stable/main"
     acceptance: "reasoning present N/N turns (harness reasoning gate); first-turn clean"
-    status: measured-spec
-    gate_result: "reasoning gate 3/3 PASS on temper DS4F-0731 (2026-08-12)"
+    status: extracted
+    gate_result: "live 3/3 PASS on temper DS4F-0731 2026-08-12; reroll + re-gate on own base"
   - id: PIP-300
     milestone: M3
     capability: Request-stable main-KV slot map + ragged query_start_loc (concurrency)
-    source: drowzeys/Keys concurrency patch
-    base: stable, main
+    source: "drowzeys/Keys-Concurrency-Patch-for-DSpark-DeepSeek-V4-Flash patches/keys-concurrency.patch"
+    base: "captured against rafaelcaricio/vllm @ f54cf5876 (DSpark/GB10 overlay); reroll for stable/main"
     acceptance: "concurrency >= 6 stable; no #40969-class hang; decode held"
-    status: spec
+    status: extracted
     gate_result: null
   - id: PIP-400
     milestone: M4

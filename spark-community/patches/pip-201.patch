@@ -1,0 +1,306 @@
+diff --git a/vllm/parser/abstract_parser.py b/vllm/parser/abstract_parser.py
+index 11fca8e..0c7b3c8 100644
+--- a/vllm/parser/abstract_parser.py
++++ b/vllm/parser/abstract_parser.py
+@@ -739,8 +739,29 @@ class DelegatingParser(Parser):
+             request=request,
+             enable_auto_tools=enable_auto_tools,
+         )
++        late_reasoning, content = self._route_late_content(content, finished=True)
++        if late_reasoning:
++            reasoning = (reasoning or "") + late_reasoning
+         return reasoning, content, tool_calls
+ 
++    def _route_late_content(
++        self, content: str | None, *, finished: bool
++    ) -> tuple[str | None, str | None]:
++        """Give the reasoning parser a second look at final content.
++
++        The reasoning phase is a one-way latch: after it closes (which for
++        thinking-disabled requests happens at prompt inspection, before the
++        first token) the reasoning parser is never consulted again. Parsers
++        that implement ``route_late_content`` can still claim reasoning
++        markup appearing in that content - e.g. agent-tuned checkpoints
++        that reopen a <think> block mid-answer, which would otherwise reach
++        the client verbatim. Parsers without the hook are unaffected.
++        """
++        route = getattr(self._reasoning_parser, "route_late_content", None)
++        if route is None or (not content and not finished):
++            return None, content
++        return route(content or "", finished=finished)
++
+     def parse_delta(
+         self,
+         delta_text: str,
+@@ -867,6 +888,28 @@ class DelegatingParser(Parser):
+             delta_message = self.finalize_generation(delta_message, request, state)
+             delta_message = self._flush_engine_parsers(delta_message)
+ 
++        if state.reasoning_ended and not reasoning_transitioned:
++            # Post-latch: the reasoning parser no longer sees this text, so
++            # give it a chance to claim reasoning markup left in content.
++            late_reasoning, late_content = self._route_late_content(
++                delta_message.content if delta_message else None,
++                finished=finished,
++            )
++            if late_reasoning or late_content != (
++                delta_message.content if delta_message else None
++            ):
++                if delta_message is None:
++                    if late_reasoning or late_content:
++                        delta_message = DeltaMessage(
++                            reasoning=late_reasoning, content=late_content
++                        )
++                else:
++                    delta_message.content = late_content
++                    if late_reasoning:
++                        delta_message.reasoning = (
++                            delta_message.reasoning or ""
++                        ) + late_reasoning
++
+         return delta_message
+ 
+     def _flush_engine_parsers(
+
+diff --git a/vllm/reasoning/deepseek_v3_reasoning_parser.py b/vllm/reasoning/deepseek_v3_reasoning_parser.py
+index dbaf0b1..1cfdb98 100644
+--- a/vllm/reasoning/deepseek_v3_reasoning_parser.py
++++ b/vllm/reasoning/deepseek_v3_reasoning_parser.py
+@@ -1,11 +1,13 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
++import os
+ from collections.abc import Iterable, Sequence
+ from typing import TYPE_CHECKING
+ 
+ from transformers import PreTrainedTokenizerBase
+ 
++from vllm.entrypoints.openai.engine.protocol import DeltaMessage
+ from vllm.reasoning import ReasoningParser
+ from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
+ 
+@@ -13,14 +15,189 @@ from .identity_reasoning_parser import IdentityReasoningParser
+ 
+ if TYPE_CHECKING:
+     from vllm.entrypoints.openai.chat_completion.protocol import ChatCompletionRequest
+-    from vllm.entrypoints.openai.engine.protocol import DeltaMessage
+     from vllm.entrypoints.openai.responses.protocol import ResponsesRequest
+ 
++_THINK_START = "<think>"
++_THINK_END = "</think>"
++
++# A tool call is an action, not reasoning. 0731 sometimes opens a <think> span
++# spontaneously (see ThinkBlockRouterParser) and then emits a tool call inside
++# it; routing that to `reasoning` hides it from the tool parser, which only
++# ever sees `content`, so the call is dropped and the raw DSML markup surfaces
++# in the client. Treat an opener as an implicit </think>.
++_TOOL_CALL_STARTS = ("<｜DSML｜tool_calls>", "<｜DSML｜function_calls>")
++
++
++def _route_think_blocks(
++    text: str, in_think: bool, holdback: bool
++) -> tuple[list[tuple[str, str]], bool, str]:
++    """Split `text` into ("reasoning"|"content", chunk) segments, routing the
++    inside of every <think>...</think> span to reasoning and stripping the
++    tags themselves. Tags may appear anywhere and any number of times; a
++    duplicate <think> while already thinking is stripped as a no-op.
++
++    Returns (segments, new_in_think, pending): with `holdback`, a trailing
++    substring that could still grow into a tag on the next streaming delta is
++    withheld and returned as `pending` instead of being emitted.
++    """
++    segments: list[tuple[str, str]] = []
++    pending = ""
++    while text:
++        i = text.find("<")
++        if i == -1:
++            segments.append(("reasoning" if in_think else "content", text))
++            return segments, in_think, pending
++        if i > 0:
++            segments.append(("reasoning" if in_think else "content", text[:i]))
++            text = text[i:]
++        if text.startswith(_THINK_END):
++            in_think = False
++            text = text[len(_THINK_END) :]
++        elif text.startswith(_THINK_START):
++            in_think = True
++            text = text[len(_THINK_START) :]
++        elif in_think and any(text.startswith(t) for t in _TOOL_CALL_STARTS):
++            # Implicit </think>: leave the opener in the text so it is emitted
++            # as content and the tool parser can pick the call up.
++            in_think = False
++        elif holdback and (
++            _THINK_START.startswith(text)
++            or _THINK_END.startswith(text)
++            or any(t.startswith(text) for t in _TOOL_CALL_STARTS)
++        ):
++            # The tail might complete into a tag with the next delta.
++            pending = text
++            return segments, in_think, pending
++        else:
++            # A lone "<" that is not (a prefix of) either tag: literal text.
++            segments.append(("reasoning" if in_think else "content", text[0]))
++            text = text[1:]
++    return segments, in_think, pending
++
++
++class ThinkBlockRouterParser(ReasoningParser):
++    """Routes EVERY <think>...</think> span to `reasoning`, wherever it
++    appears in the output, and never leaks the tags into `content`.
++
++    Why this exists: the stock delegation (R1 parser for thinking mode,
++    Identity otherwise) assumes at most one reasoning block at the very
++    start of the output. DS4-Flash-0731 is agent-tuned and at temperature
++    1.0 (on 2-bit-flattened logits) it occasionally REOPENS a <think>
++    block mid-answer, or opens one spontaneously with thinking disabled —
++    both leak raw "</think>" text to clients (observed in OpenCode,
++    2026-08-06). This parser is state-driven, purely text-based (robust
++    to arbitrary token chunking, e.g. multi-token speculative deltas) and
++    handles any number of blocks in both modes.
++
++    `initial_in_think=True` models a chat template that pre-filled
++    <think> (thinking mode); an explicit leading <think> in the output is
++    stripped as a duplicate either way.
++    """
++
++    def __init__(
++        self,
++        tokenizer: PreTrainedTokenizerBase,
++        *args,
++        initial_in_think: bool = False,
++        **kwargs,
++    ):
++        super().__init__(tokenizer, *args, **kwargs)
++        self._initial_in_think = initial_in_think
++        self._in_think = initial_in_think
++        self._pending = ""
++        # Separate state for the post-latch (late) content pass.
++        self._late_in_think = False
++        self._late_pending = ""
++
++    @property
++    def reasoning_start_str(self) -> str | None:
++        return _THINK_START
++
++    @property
++    def reasoning_end_str(self) -> str | None:
++        return _THINK_END
++
++    def is_reasoning_end(self, input_ids: Sequence[int]) -> bool:
++        return not self._in_think
++
++    def is_reasoning_end_streaming(
++        self, input_ids: Sequence[int], delta_ids: Iterable[int]
++    ) -> bool:
++        return not self._in_think
++
++    def extract_content_ids(self, input_ids: list[int]) -> list[int]:
++        # Identity approximation: structured-output constraining over the
++        # exact content span is not distinguishable here without a second
++        # detokenization pass; matches the pre-existing non-think behavior.
++        return input_ids
++
++    def extract_reasoning_streaming(
++        self,
++        previous_text: str,
++        current_text: str,
++        delta_text: str,
++        previous_token_ids: Sequence[int],
++        current_token_ids: Sequence[int],
++        delta_token_ids: Sequence[int],
++    ) -> DeltaMessage | None:
++        if not delta_text and not self._pending:
++            return None
++        segments, self._in_think, self._pending = _route_think_blocks(
++            self._pending + delta_text, self._in_think, holdback=True
++        )
++        reasoning = "".join(t for k, t in segments if k == "reasoning")
++        content = "".join(t for k, t in segments if k == "content")
++        if not reasoning and not content:
++            return None
++        return DeltaMessage(
++            reasoning=reasoning or None, content=content or None
++        )
++
++    def extract_reasoning(
++        self, model_output: str, request: "ChatCompletionRequest | ResponsesRequest"
++    ) -> tuple[str | None, str | None]:
++        segments, _, _ = _route_think_blocks(
++            model_output, self._initial_in_think, holdback=False
++        )
++        reasoning = "".join(t for k, t in segments if k == "reasoning")
++        content = "".join(t for k, t in segments if k == "content")
++        return reasoning or None, content if content else None
++
++    def route_late_content(
++        self, text: str, *, finished: bool
++    ) -> tuple[str | None, str | None]:
++        """Route <think> blocks found in content AFTER the reasoning phase.
++
++        DelegatingParser latches `reasoning_ended` one-way: once the
++        reasoning phase closes (immediately, at prompt inspection, when
++        thinking is disabled), the reasoning parser is never consulted
++        again and everything flows through the tool parser / passthrough.
++        Agent-tuned checkpoints do reopen <think> mid-answer, so without a
++        late pass those blocks reach the client verbatim.
++
++        Keeps state separate from the reasoning-phase machine (that one
++        stopped at the latch) and holds back a partial tag until the next
++        delta; `finished` flushes it.
++        """
++        segments, self._late_in_think, self._late_pending = _route_think_blocks(
++            self._late_pending + text, self._late_in_think, holdback=not finished
++        )
++        reasoning = "".join(t for k, t in segments if k == "reasoning")
++        content = "".join(t for k, t in segments if k == "content")
++        if finished and self._late_pending:
++            content += self._late_pending
++            self._late_pending = ""
++        return reasoning or None, content or None
++
+ 
+ class DeepSeekV3ReasoningParser(ReasoningParser):
+     """
+-    V3 parser that delegates to either DeepSeekR1ReasoningParser or
+-    IdentityReasoningParser based on `thinking` and `separate_reasoning`.
++    V3 parser that delegates based on `thinking` / `enable_thinking`.
++
++    Default: ThinkBlockRouterParser in both modes (initial state differs),
++    so spontaneous or reopened <think> blocks never leak raw tags to
++    content. VLLM_DS_V3_LEGACY_REASONING=1 restores the stock delegation
++    (R1 for thinking, Identity otherwise).
+     """
+ 
+     def __init__(self, tokenizer: PreTrainedTokenizerBase, *args, **kwargs):
+@@ -31,11 +208,27 @@ class DeepSeekV3ReasoningParser(ReasoningParser):
+         enable_thinking = bool(chat_kwargs.get("enable_thinking", False))
+         thinking = thinking or enable_thinking
+ 
++        legacy = os.getenv("VLLM_DS_V3_LEGACY_REASONING", "0") == "1"
+         self._parser: ReasoningParser
+-        if thinking:
+-            self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
++        if legacy:
++            if thinking:
++                self._parser = DeepSeekR1ReasoningParser(tokenizer, *args, **kwargs)
++            else:
++                self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
+         else:
+-            self._parser = IdentityReasoningParser(tokenizer, *args, **kwargs)
++            self._parser = ThinkBlockRouterParser(
++                tokenizer, *args, initial_in_think=thinking, **kwargs
++            )
++
++    def route_late_content(
++        self, text: str, *, finished: bool
++    ) -> tuple[str | None, str | None]:
++        """See ThinkBlockRouterParser.route_late_content. In legacy mode the
++        content is returned unchanged (stock behavior)."""
++        route = getattr(self._parser, "route_late_content", None)
++        if route is None:
++            return None, text or None
++        return route(text, finished=finished)
+ 
+     @property
+     def reasoning_start_str(self) -> str | None:
