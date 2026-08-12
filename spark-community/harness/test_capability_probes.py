@@ -6,9 +6,15 @@ import capability_probes as cp
 
 class CapabilityProbeTest(unittest.TestCase):
     def _mk_metrics(self, accepted, drafted):
-        return (f"# HELP among spec_decode accept counters\n"
-                f"vllm_spec_decode_num_drafted_tokens {{}} {drafted}\n"
-                f"vllm_spec_decode_num_accepted_tokens {{}} {accepted}\n")
+        # Live vLLM names + the `_created` / per_pos noise the parser must ignore.
+        return (
+            "# HELP vllm:spec_decode_num_draft_tokens_total Number of draft tokens.\n"
+            f"vllm:spec_decode_num_draft_tokens_total{{engine=\"0\"}} {drafted}\n"
+            f"vllm:spec_decode_num_draft_tokens_created{{engine=\"0\"}} 1786452427.0\n"
+            f"vllm:spec_decode_num_accepted_tokens_total{{engine=\"0\"}} {accepted}\n"
+            f"vllm:spec_decode_num_accepted_tokens_created{{engine=\"0\"}} 1786452427.0\n"
+            'vllm:spec_decode_num_accepted_tokens_per_pos_total{position="0"} 99\n'
+        )
 
     def test_acceptance_pass_healthy(self):
         with mock.patch.object(cp, "_get_text",

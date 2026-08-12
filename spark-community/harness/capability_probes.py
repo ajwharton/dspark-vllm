@@ -75,19 +75,28 @@ def probe_spec_acceptance(base: str, api_key: str = "",
     except Exception as e:
         return ProbeVerdict("spec_acceptance", "UNKNOWN",
                             f"no /metrics (err={e})")
-    lines = [ln for ln in text.splitlines()
-             if "spec_decode" in ln.lower()]
+    # Real vLLM names (Anemll 0.25 / stock 0.27):
+    #   vllm:spec_decode_num_draft_tokens_total
+    #   vllm:spec_decode_num_accepted_tokens_total
+    # Skip HELP/TYPE, `_created` timestamps, and per_pos breakdowns —
+    # those would overwrite the counters with unix-epoch gauges.
     drafted = accepted = None
-    for ln in lines:
-        body = ln.lstrip("#")
-        if "drafted" in body.lower():
-            v = _last_metric_value(body)
-            if v is not None:
-                drafted = v
-        elif "accepted" in body.lower():
-            v = _last_metric_value(body)
-            if v is not None:
-                accepted = v
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#"):
+            continue
+        low = s.lower()
+        if "spec_decode" not in low:
+            continue
+        if "_created" in low or "per_pos" in low:
+            continue
+        v = _last_metric_value(s)
+        if v is None:
+            continue
+        if "draft_token" in low or "drafted" in low:
+            drafted = v
+        elif "accepted" in low:
+            accepted = v
     if accepted is None:
         return ProbeVerdict("spec_acceptance", "UNKNOWN",
                             "no spec-decode accept counters exposed")
@@ -138,8 +147,10 @@ def probe_concurrency(base: str, model: str, api_key: str, n_conc: int = 6,
                                                  f"exact nonce: {nonce}"}],
                                  "max_tokens": max_tokens}, api_key,
                            timeout=timeout_s)
-            text = (r.get("choices") or [{}])[0].get("message", {}).get(
-                "content", "")
+            msg = (r.get("choices") or [{}])[0].get("message", {}) or {}
+            # Thinking-on lanes often put text in `reasoning` and leave
+            # content=None. Treat None as empty; search both channels.
+            text = (msg.get("content") or "") + "\n" + (msg.get("reasoning") or "")
             results[i] = {"ok": True, "nonce": nonce, "text": text}
         except Exception as e:
             results[i] = {"ok": False, "nonce": nonce, "error": str(e)}
