@@ -12,7 +12,18 @@ pips:
     source: "tonyd2wild/DeepSeek-v4-Flash-0731-DSpark-1M-NVFP4-KV-2x-DGX-Spark patches/0004-dspark-shared-expert-gate-up-proj.patch"
     base: "captured against Anemll dspark-vllm-gx10 0.1.1 (vLLM v0.25.1); reroll for stable/main"
     acceptance: "dspark_acceptance restored to 60%-class; decode not regressed"
-    status: extracted
+    status: "verify-only (probe: bug not live on stable seam)"
+    probe_result: |
+      Static+dry inventory probe 2026-08-12 vs real DS4F-0731 checkpoint (72k tensors):
+      - No spec_decode/dspark.py on base; DSpark loader seam = vllm/models/deepseek_v4/nvidia/dspark.py
+      - Generic stacked_params_mapping (gate_up_proj w1/w3) + .shared_experts.w2->down_proj
+        already route the 18 draft shared-expert tensors (mtp.{0,1,2}.ffn.shared_experts.w{1,2,3}.{weight,scale})
+      - Conclusion: the tonyd2wild mapping-NARROWING regression is NOT present on this seam.
+        Capability effectively already covered -> verify-only, do NOT port.
+      - OPEN (deferred to first real stable load): seam registers draft layers at
+        model.layers.{num_hidden_layers+i} but _remap_dspark_name targets model.layers.{i}.
+        Needs runtime confirmation; not the PIP-200 bug but a separate correctness question.
+      - per decision rule: no source build performed for this chunk.
     gate_result: null   # port + gate pending
   - id: PIP-201
     milestone: M2
