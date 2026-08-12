@@ -109,8 +109,27 @@ Commit `49a9d7dfd`. Ported from `stable` overlay:
   `== "fp8_ds_mla"` would have silently dropped nvfp4 to `_forward_bf16_kv` (the
   exact long-context regression upstream fixed). Pinned by `test_nvfp4_port.py`
   in the canonical suite (29/29 green). Default-off by construction.
-- **Status:** source-complete + contract-tested; GPU validation pending (needs a
-  `main` boot on a GB10 node; not yet run).
+- **Seam confirmed:** `FlashMLASparseBackend` (the DS4F sparse-MLA backend on
+  `main`) is defined IN `flashmla_sparse.py` — the exclusively edited file.
+  `flashinfer_mla_sparse.py` does not carry `FlashMLASparseBackend` (different
+  V3.2/legacy path), so it is correct that it was NOT edited.
+- **GPU validation (temper, 2026-08-12):** bind-mounted the 3 edited files into
+  the stock 0.27.1 image (the exact image that argparse-REJECTED it) on real
+  GB10. Result:
+  - PASS — `--kv-cache-dtype nvfp4_ds_mla` is ACCEPTED; the falsify's exact
+    `invalid choice` failure is reversed on hardware.
+  - NOT fully proven — an end-to-end KV serve on the real 0731. Single temper
+    cannot run it (155 GiB weights > 121 GiB; OOMs before backend selection), and
+    V2-Lite is non-sparse MLA (nvfp4_ds_mla is a sparse-KV dtype, so the selector
+    rejects it for V2 — wrong model, expected). The selector error also listed
+    `FLASHINFER_MLA_SPARSE_SM120` rejecting nvfp4 — a STOCK-image backend layout
+    that fork `main` does not have (no sm120 file), so that is a harness artifact,
+    not a port gap.
+  - **Conclusion:** MAIN-CHUNK-A is validated as far as a single GB10 allows
+    (argparse + correct seam + Issue-22 dispatch). True faithful serve requires
+    dual-node (weights too big for one Spark) AND MAIN-CHUNK-B (MoE), so it cannot
+    be fully proven on temper alone. Left as the real (dual-node) validation step.
+  - temper Moet lane was stopped during the probe and restored afterwards.
 
 ### PENDING — MAIN-CHUNK-B: GB10 MXFP4 MoE path (`flashinfer_b12x`)
 Stock `main` accepts the flag name but the MXFP4 oracle rejects it; triton/cutlass
