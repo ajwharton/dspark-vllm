@@ -20,9 +20,11 @@ pips:
         already route the 18 draft shared-expert tensors (mtp.{0,1,2}.ffn.shared_experts.w{1,2,3}.{weight,scale})
       - Conclusion: the tonyd2wild mapping-NARROWING regression is NOT present on this seam.
         Capability effectively already covered -> verify-only, do NOT port.
-      - OPEN (deferred to first real stable load): seam registers draft layers at
-        model.layers.{num_hidden_layers+i} but _remap_dspark_name targets model.layers.{i}.
-        Needs runtime confirmation; not the PIP-200 bug but a separate correctness question.
+      - RESOLVED via upstream git history (2026-08-12): the file is UPSTREAM-authored
+        (#46995 + #47093 + #47429 + #49415 + #46789). Draft-layer offset (num_hidden_layers+i)
+        is intentional (append after target layers), NOT a bug. Only upstream draft-shared-expert
+        change is #49415 (padding) gated to block-FP8 AND TP>8 AND NOT seq-parallel - not our
+        GB10 TP=1/2 class; future-port only if >8-way TP.
       - per decision rule: no source build performed for this chunk.
     gate_result: null   # port + gate pending
   - id: PIP-201
