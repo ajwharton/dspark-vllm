@@ -134,7 +134,7 @@ def probe_concurrency(base: str, model: str, api_key: str, n_conc: int = 6,
             r = _post_json(url, {"model": model,
                                  "messages": [
                                      {"role": "user",
-                                      "content": f"{prompts[i]}\\nReply with the "
+                                      "content": f"{prompts[i]}\nReply with the "
                                                  f"exact nonce: {nonce}"}],
                                  "max_tokens": max_tokens}, api_key,
                            timeout=timeout_s)
@@ -179,14 +179,14 @@ def probe_warm_ttft(base: str, model: str, api_key: str,
     faster (could mean no cache, or no overlap for this endpoint).
     """
     url = _base_url(base) + "/v1/chat/completions"
-    prefix = ("nonce-warmcache-2026\\n" + " ".join(["quartz"] * 40) +
-              "\\nContinue in detail at length.\\n")
+    prefix = ("nonce-warmcache-2026\n" + " ".join(["quartz"] * 40) +
+              "\nContinue in detail at length.\n")
     samples = {}
     for kind in ("cold", "warm"):
         ts = []
         for _ in range(2):
-            p = prefix + (f"\\nRound-{kind}-{_}" if kind == "cold"
-                          else "\\nRound-warm-continuation")
+            p = prefix + (f"\nRound-{kind}-{_}" if kind == "cold"
+                          else "\nRound-warm-continuation")
             payload = {"model": model,
                        "messages": [{"role": "user", "content": p}],
                        "max_tokens": 8, "stream": True,
@@ -222,3 +222,44 @@ def probe_warm_ttft(base: str, model: str, api_key: str,
                         f"({samples['cold']:.3f}s cold,"
                         f" {samples['warm']:.3f}s warm)",
                         value=ratio, threshold=f"PASS<{warm_ratio_below}")
+
+
+# --------------------------------------------------------------------------- #
+# CLI runner — fire probes at a live endpoint (dual-Spark falsify experiment)
+# --------------------------------------------------------------------------- #
+def _run_from_cli(argv: list[str] | None = None) -> int:
+    import argparse
+    p = argparse.ArgumentParser(
+        prog="capability_probes",
+        description="Run Tony/Keys/Mia capability detectors against an "
+                    "OpenAI-compatible endpoint (stock-vs-fork falsify).")
+    p.add_argument("probe", choices=["spec_acceptance", "concurrency",
+                                     "warm_ttft"])
+    p.add_argument("--base", required=True,
+                   help="endpoint base, e.g. http://192.168.100.162:8000")
+    p.add_argument("--model", default="deepseek-v4-flash")
+    p.add_argument("--api-key", default="", help="Bearer key if required")
+    p.add_argument("--conc", type=int, default=6)
+    a = p.parse_args(argv)
+
+    if a.probe == "spec_acceptance":
+        v = probe_spec_acceptance(a.base, a.api_key)
+    elif a.probe == "concurrency":
+        v = probe_concurrency(a.base, a.model, a.api_key, n_conc=a.conc)
+    else:
+        v = probe_warm_ttft(a.base, a.model, a.api_key)
+
+    out = {
+        "probe": v.probe,
+        "verdict": v.verdict,
+        "detail": v.detail,
+        "value": v.value,
+        "threshold": v.threshold,
+    }
+    print(json.dumps(out, indent=2, sort_keys=True))
+    return 0 if v.verdict == "PASS" else (3 if v.verdict == "FAIL" else 2)
+
+
+if __name__ == "__main__":
+    import sys
+    raise SystemExit(_run_from_cli())
