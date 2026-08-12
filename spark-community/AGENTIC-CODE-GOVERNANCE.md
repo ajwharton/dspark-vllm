@@ -58,6 +58,19 @@ A change must pass every gate before it is finished.
    when scope creeps, whether the creep comes from a human or from another
    agent. Difficulty of review is the author's failure, not the reviewer's.
 
+9. Capability gating behind optional flags (community unblock). Any behavior
+   tied to a specific model, model family, or node count must NOT be
+   hard-wired into the shared path. Ship it as an OPTIONAL, DEFAULT-OFF
+   startup flag so a generic user's setup never breaks and the capability
+   stays available to those who need it. Default must always preserve the
+   existing, known-good behavior of upstream vLLM. This is how we roll
+   single-model and N-node-specific work up into a community build without
+   regressing anyone. Port by capability (PIP), not by author or by
+   "my machine": if a change only helps a particular model/nodes, it is a
+   flag, gated behind a documented CLI switch with a no-nerf gate result
+   recorded in the manifest. `main`/`rolling` stays generic + safe; the
+   flag surfaces the specific capability.
+
 ## What failure looks like
 
 - A diff that also "cleans up" unrelated files.
