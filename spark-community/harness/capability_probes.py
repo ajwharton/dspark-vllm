@@ -76,15 +76,15 @@ def probe_spec_acceptance(base: str, api_key: str = "",
         return ProbeVerdict("spec_acceptance", "UNKNOWN",
                             f"no /metrics (err={e})")
     lines = [ln for ln in text.splitlines()
-             if "spec_decode" in ln.lower() and "accept" in ln.lower()]
+             if "spec_decode" in ln.lower()]
     drafted = accepted = None
     for ln in lines:
         body = ln.lstrip("#")
-        if "drafted" in body or "requested" in body:
+        if "drafted" in body.lower():
             v = _last_metric_value(body)
             if v is not None:
                 drafted = v
-        if "accepted" in body:
+        elif "accepted" in body.lower():
             v = _last_metric_value(body)
             if v is not None:
                 accepted = v

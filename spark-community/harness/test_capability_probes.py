@@ -32,8 +32,12 @@ class CapabilityProbeTest(unittest.TestCase):
         self.assertEqual(v.verdict, "UNKNOWN")
 
     def test_concurrency_pass(self):
-        ok = {"choices": [{"message": {"content": "nonce-abc"}}]}
-        with mock.patch.object(cp, "_post_json", return_value=ok):
+        def echo(url, payload, key, timeout):
+            # Correct endpoint echoes the per-request nonce back.
+            content = payload["messages"][0]["content"]
+            nonce = content.split("\n")[0].strip() or "nonce-X"
+            return {"choices": [{"message": {"content": f"ok {nonce}"}}]}
+        with mock.patch.object(cp, "_post_json", side_effect=echo):
             v = cp.probe_concurrency("http://h", "m", "", n_conc=4)
         self.assertEqual(v.verdict, "PASS")
 
