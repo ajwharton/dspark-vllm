@@ -22,7 +22,13 @@ would port the same thing 3–5 times and conflict).
 | `Anemll/dspark-vllm-gx10` | **our prod base** (img a8394849) | pinned DSpark runtime; divergent DSpark behavior |
 | `MiaAI-Lab/DeepSeek-v4-Flash-DSpark-2x-DGX-Spark` | 2-node launch packaging | worker-first launch, her six v0.27 backports |
 | "jasl fork" (4x, RDMA, MTP) | NVLink/RDMA multi-node | MTP path, RDMA tuning |
+| `lrozewicz/vLLM-Moet-GB10` (+ base `kacper-daftcode/vLLM-Moet`) | 2-bit expert-plane quant adapted for GB10 unified mem / sm_121 | single-node DS4F (155GB) feasibility; exercises REAL deepseek_v4 path on one node |
 | upstream `vllm-project/vllm` | canonical line | its OWN DS4/DSpark path (target to converge on) |
+
+**Single-node DS4F feasibility (confirmed 2026-08-12):**
+- recipes.vllm.ai states single-GB10 128GB < FP8/NVFP4 DS4F layout (needs TP=2, one GB10/node) and that DGX Spark "requires the community Spark vLLM build for this model rather than the stock vLLM release/nightly image."
+- Empirically confirmed: stock vLLM 0.27.1 hits 3 separate blockers serving a local DS4F GGUF (see ../aiops/docs/ds4-gguf-027-blockers.md).
+- Single-node the REAL DS4F-0731 runs (via vLLM-Moet-GB10, 2-bit+FP4: ~14.3 tok/s decode, ~753 tok/s prefill on one GB10). Moet/Moet-GB10 = additional roll-up sources + faithful single-node dev path (DSpark-spec sets this only via the "1x Spark tuned DSpark" line at ~35 tok/s).
 
 **Observed duplication across sources:** DSpark integration appears in 5
 places (rafaelcaricio, fraserprice, B12X, Anemll, upstream); NVFP4 KV in 3
