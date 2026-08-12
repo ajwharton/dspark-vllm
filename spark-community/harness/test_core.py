@@ -1,8 +1,8 @@
 # No-Nerf gate — core logic tests (stdlib unittest, no hardware required).
 import unittest
 
-from .core import (VLLMClient, compare_median, gate_blocked, median,
-                   unique_prompts)
+from core import (VLLMClient, compare_median, gate_blocked, median,
+                  unique_prompts)
 
 
 class TestVLLMClientAuth(unittest.TestCase):
