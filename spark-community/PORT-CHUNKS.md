@@ -84,3 +84,39 @@ independent; order follows the risk/sequence plan in `PORT-PLAN.md`.
 - DSpark acceptance ~60%-class (collapse to ~25% = the bug we guard).
 - Decode ~11.5 tok/s long-run warm (temper, Moet k=2 faithful) / harness
   scoped variant; cold-TTFT median ~1.35s @256 unique tok; reasoning 3/3.
+
+## 4. Stock falsify -> the MAIN port track (added 2026-08-12)
+
+**Falsified on forge+hammer (see `~/aiops/docs/.handoff/ds4-stock027-falsify-2026-08-12.md`):**
+stock `vllm/vllm-openai:v0.27.1-aarch64-cu129-ubuntu2404` does **not** serve the
+abliterated DS4F-0731 on dual GB10. Reasons:
+- `--kv-cache-dtype nvfp4_ds_mla` -> argparse REJECT (absent on `main`).
+- `--moe-backend flashinfer_b12x` -> CLI accept, MXFP4 oracle REJECT.
+- triton MXFP4 -> no support for this CUDA device (GB10).
+- flashinfer_cutlass -> ~90% shards then DeepGEMM `Unknown SF transformation`
+  (UE8M0; upstream #51758 / #50796 class).
+
+**Consequence:** `main` (rolling upstream) is where these capabilities are missing;
+`stable` (v0.25.1+Anemll) is the in-repo reference. Port capability by capability
+to `main` as **rule-9 default-off** flags behind the no-nerf gate.
+
+### LANDED — MAIN-CHUNK-A: `nvfp4_ds_mla` KV dtype (Issue-#22 class)
+Commit `49a9d7dfd`. Ported from `stable` overlay:
+- cache enum `nvfp4_ds_mla` (+ `torch_utils` uint8 map, backend supported list,
+  `get_kv_cache_shape`).
+- **Issue-22 invariant:** every fp8 dispatch in `flashmla_sparse.py` now routes
+  BOTH `fp8_ds_mla` and `nvfp4_ds_mla` to the fast FP8 kernel path. A bare
+  `== "fp8_ds_mla"` would have silently dropped nvfp4 to `_forward_bf16_kv` (the
+  exact long-context regression upstream fixed). Pinned by `test_nvfp4_port.py`
+  in the canonical suite (29/29 green). Default-off by construction.
+- **Status:** source-complete + contract-tested; GPU validation pending (needs a
+  `main` boot on a GB10 node; not yet run).
+
+### PENDING — MAIN-CHUNK-B: GB10 MXFP4 MoE path (`flashinfer_b12x`)
+Stock `main` accepts the flag name but the MXFP4 oracle rejects it; triton/cutlass
+both fail on GB10. Port the stable `flashinfer_b12x_moe.py` wiring into `main`'s
+`select_deepseek_v4_mxfp4_moe_backend` oracle as a rule-9 default-off backend, plus
+the DeepGEMM UE8M0 SF-layout workaround (#51758/#50796 class) needed regardless.
+This is the larger chunk; without it `main` cannot serve DS4F on GB10 even with
+MAIN-CHUNK-A.
+
