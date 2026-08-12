@@ -30,8 +30,8 @@ upstream tree pristine so upstream merges stay clean.
 ## Two-track policy
 | Track | Base | Purpose |
 |-------|------|---------|
-| `stable` | proven working base | stays shippable / N-node safe today |
-| `main` (rolling) | current upstream vLLM | converges under the no-nerf gate |
+| `stable` | proven working base | stays shippable / N-node safe today (advances only via a passing no-nerf gate) |
+| `main` (rolling) | current upstream vLLM | converges under the no-nerf gate; auto-syncs upstream daily (see `.github/workflows/upstream-sync.yml`) |
 
 ## Endgame: merge back into upstream vLLM
 This layer is a proving ground, not a permanent parallel. Every Spark delta is

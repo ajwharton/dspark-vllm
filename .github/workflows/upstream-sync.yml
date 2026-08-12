@@ -1,0 +1,63 @@
+# upstream-sync — keep rolling `main` tracking upstream vLLM daily
+#
+# The fork's endgame is returning capability to upstream vLLM (see
+# SPARK-COMMUNITY.md). A fork that drifts is a fork that forks forever, so
+# `main` auto-merges upstream vLLM main on a schedule. Our delta is isolated in
+# spark-community/, so these merges are normally empty-safe; a conflict aborts
+# and fails the job loudly for a human (never a silent half-merge / force push).
+#
+# NOTE: `stable` is NOT touched here — it stays pinned to the proven base and
+# only advances via a passing no-nerf gate.
+name: upstream-sync
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # daily 02:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write   # GITHUB_TOKEN can push the merge back to this repo
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0   # (fork already carries most upstream history; delta fetch stays small)
+
+      - name: Configure git
+        run: |
+          git config user.name 'vllm-spark-bot'
+          git config user.email 'vulcan@forge.local'
+
+      - name: Add upstream + fetch
+        run: |
+          git remote add upstream https://github.com/vllm-project/vllm.git
+          git fetch upstream main
+
+      - name: Count divergence
+        id: div
+        run: |
+          behind=$(git rev-list --count main..upstream/main)
+          echo "behind=$behind"
+          echo "behind=$behind" >> "$GITHUB_OUTPUT"
+
+      - name: Merge upstream into main (if behind)
+        run: |
+          if [ "${{ steps.div.outputs.behind }}" -gt 0 ]; then
+            if git merge upstream/main --no-edit \
+                 -m "chore(main): merge upstream vLLM (sync $(date -u +%F))"; then
+              echo "merged upstream -> main"
+            else
+              git merge --abort
+              echo "CONFLICT: upstream vLLM merge conflict on main. Resolve manually (normal push, not force). Job failed intentionally." >&2
+              exit 1
+            fi
+          else
+            echo "already up to date (behind=0)"
+          fi
+
+      - name: Push main
+        run: git push origin main
