@@ -145,8 +145,12 @@ def probe_concurrency(base: str, model: str, api_key: str, n_conc: int = 6,
                                      {"role": "user",
                                       "content": f"{prompts[i]}\nReply with the "
                                                  f"exact nonce: {nonce}"}],
-                                 "max_tokens": max_tokens}, api_key,
-                           timeout=timeout_s)
+                                 "max_tokens": max_tokens,
+                                 # Thinking-on burns the small token budget
+                                 # before the nonce is echoed — that is not
+                                 # Keys #3 contamination. Force think-off.
+                                 "chat_template_kwargs": {"thinking": False}},
+                           api_key, timeout=timeout_s)
             msg = (r.get("choices") or [{}])[0].get("message", {}) or {}
             # Thinking-on lanes often put text in `reasoning` and leave
             # content=None. Treat None as empty; search both channels.
