@@ -164,6 +164,13 @@ Progress vs stock falsify:
 Rollback: `vllm-dspark-fork:stable-5030cb2` restored, chat OK.
 Anemll fallback `vllm_ds4_0731_anemll` still present.
 
-Next chunk: DeepGEMM UE8M0 SF-layout for **linear** FP8 (not MoE). That is
-what still blocks a stock-0.27-family serve of these weights.
+### LANDED — MAIN-CHUNK-C GPU validation (2026-08-13) — LIVE
+DeepGEMM from `origin/nv_dev` (2.6.1+local, SM120 kernels present) + remaining
+CHUNK-A holes (`get_kv_quant_mode("nvfp4_ds_mla")`, SWA 584, `_as_sparse_cache`,
+top-k pad). Dual-node smoke on forge+hammer: API 200, chat OK.
+
+Image: `vllm-dspark-fork:main-chunkabc`. Rollback `_ab` = stablebake.
+Mixed FlashInfer autotune skipped on SM120+nvfp4 (prefill Triton IMA).
+No Anemll speed replay yet.
+
 

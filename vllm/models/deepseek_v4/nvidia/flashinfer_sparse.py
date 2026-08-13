@@ -128,7 +128,7 @@ class DeepseekV4FlashInferMLASparseBackend(DeepseekV4FlashMLABackend):
         device_capability: DeviceCapability,
     ) -> str | None:
         if device_capability.major == 10:
-            if kv_cache_dtype == "fp8_ds_mla":
+            if kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"):
                 return (
                     "FLASHINFER_MLA_SPARSE_DSV4 SM10x uses the plain "
                     "per-tensor FP8 KV layout, not fp8_ds_mla"
@@ -137,7 +137,7 @@ class DeepseekV4FlashInferMLASparseBackend(DeepseekV4FlashMLABackend):
                 return "kv_cache_dtype not supported"
             return None
         if device_capability.major == 12:
-            if kv_cache_dtype not in ("fp8", "fp8_e4m3", "fp8_ds_mla"):
+            if kv_cache_dtype not in ("fp8", "fp8_e4m3", "fp8_ds_mla", "nvfp4_ds_mla"):
                 return "kv_cache_dtype not supported"
             from vllm.utils.flashinfer import has_flashinfer_sparse_mla_sm120
 

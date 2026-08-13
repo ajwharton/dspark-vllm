@@ -420,7 +420,7 @@ class MLAAttentionSpec(FullAttentionSpec):
 
     @property
     def real_page_size_bytes(self) -> int:
-        if self.cache_dtype_str == "fp8_ds_mla":
+        if self.cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):
             if self.model_version == "deepseek_v4":
                 # DeepseekV4: 448B NoPE + 128B RoPE + 8B fp8 scale = 584B per token.
                 # head_size stays semantic (512); bytes are determined here.
@@ -660,7 +660,7 @@ class SlidingWindowMLASpec(SlidingWindowSpec):
 
     @property
     def real_page_size_bytes(self) -> int:
-        if self.model_version == "deepseek_v4" and self.cache_dtype_str == "fp8_ds_mla":
+        if self.model_version == "deepseek_v4" and self.cache_dtype_str in ("fp8_ds_mla", "nvfp4_ds_mla"):
             # DeepseekV4 FlashMLA: 448B NoPE + 128B RoPE + 8B fp8 scale = 584B
             # per token. FlashInfer's contiguous bf16/fp8 cache falls through to
             # the element-size formula below.

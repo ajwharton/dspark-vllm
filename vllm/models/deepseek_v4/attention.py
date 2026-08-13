@@ -651,7 +651,7 @@ class DeepseekV4Attention(nn.Module, AttentionLayerBase, ABC):
         # fp8_ds_mla is a UE8M0 block-scaled uint8 layout and needs 576B
         # alignment; plain bf16 / per-tensor fp8 rows use natural element-size
         # pages.
-        uses_fp8_ds_mla_layout = self.kv_cache_dtype == "fp8_ds_mla"
+        uses_fp8_ds_mla_layout = self.kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla")
         return MLAAttentionSpec(
             block_size=vllm_config.cache_config.block_size,
             num_kv_heads=1,
@@ -689,7 +689,7 @@ class DeepseekV4IndexerCache(torch.nn.Module, AttentionLayerBase):
     def get_kv_cache_spec(self, vllm_config: VllmConfig) -> KVCacheSpec:
         # head_dim already carries the fp8 scale padding
         # compress_ratio=1 for V3.2, >1 for DeepseekV4; both use the same cache layout.
-        uses_fp8_ds_mla_layout = vllm_config.cache_config.cache_dtype == "fp8_ds_mla"
+        uses_fp8_ds_mla_layout = vllm_config.cache_config.cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla")
         return MLAAttentionSpec(
             block_size=self.cache_config.block_size,
             num_kv_heads=1,

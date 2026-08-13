@@ -104,7 +104,7 @@ class FlashInferMLASparseTRTLLMBackend(_FlashInferMLASparseBackendBase):
         from vllm.config import get_current_vllm_config
 
         vllm_config = get_current_vllm_config()
-        if kv_cache_dtype == "fp8_ds_mla":
+        if kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"):
             return (
                 "FLASHINFER_MLA_SPARSE SM10 does not support fp8_ds_mla kv-cache dtype"
             )

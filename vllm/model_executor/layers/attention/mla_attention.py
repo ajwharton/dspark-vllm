@@ -2080,7 +2080,7 @@ class MLACommonMetadataBuilder(AttentionMetadataBuilder[M]):
             self.determine_chunked_prefill_workspace_size(vllm_config)
         )
 
-        use_packed_fp8_cache = vllm_config.cache_config.cache_dtype == "fp8_ds_mla"
+        use_packed_fp8_cache = vllm_config.cache_config.cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla")
         self.dcp_manager: MLADCPManager | None = None
         if self.dcp_world_size > 1:
             # Note(hc): The local kvcache is incomplete when DCP is triggered,
@@ -2545,7 +2545,7 @@ class MLACommonBaseImpl(MLAAttentionImpl[A], Generic[A]):
         for chunk in chunked_context.chunks:
             toks = chunk.num_context_tokens
             block_table = prefill_metadata.block_table[chunk.request_slice]
-            if self.kv_cache_dtype == "fp8_ds_mla":
+            if self.kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"):
                 ops.cp_gather_and_upconvert_fp8_kv_cache(
                     src_cache=kv_c_and_k_pe_cache,
                     dst=workspace[:toks],
@@ -2654,7 +2654,7 @@ class MLACommonBaseImpl(MLAAttentionImpl[A], Generic[A]):
             toks = chunk.num_local_context_tokens
             padded_local_cu_seq_lens = chunk.padded_local_cu_seq_lens
             block_table = prefill_metadata.block_table[chunk.request_slice]
-            if self.kv_cache_dtype == "fp8_ds_mla":
+            if self.kv_cache_dtype in ("fp8_ds_mla", "nvfp4_ds_mla"):
                 ops.cp_gather_and_upconvert_fp8_kv_cache(
                     src_cache=kv_c_and_k_pe_cache,
                     dst=workspace[:toks],
